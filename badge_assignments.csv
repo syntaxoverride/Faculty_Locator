@@ -1,0 +1,46 @@
+# Badge Assignment Registry
+# 
+# Organization UUID: FDA50693-A4E2-4FB1-AFCF-C6EB07647825
+# (Change this to your own UUID — generate at https://www.uuidgenerator.net/)
+#
+# This file maps badge Minor IDs to people.
+# The backend uses this registry to resolve badge identities dynamically.
+# You should not need to reflash the scanner just to add a new badge.
+# 
+# Format: Major, Minor, Name, Role, Notes
+
+# Major 1 = Faculty
+1, 1, "Dr. Smith",     Faculty,   "Office: CI-210"
+1, 2, "Dr. Jones",     Faculty,   "Office: CI-212"
+1, 3, "Prof. Garcia",  Faculty,   "Office: CI-215"
+1, 4, "",              Faculty,   "UNASSIGNED"
+1, 5, "",              Faculty,   "UNASSIGNED"
+1, 6, "",              Faculty,   "UNASSIGNED"
+1, 7, "",              Faculty,   "UNASSIGNED"
+1, 8, "",              Faculty,   "UNASSIGNED"
+1, 9, "",              Faculty,   "UNASSIGNED"
+1, 10, "",             Faculty,   "UNASSIGNED"
+
+# Major 2 = Staff / TAs
+2, 1, "",              Staff,     "UNASSIGNED"
+2, 2, "",              Staff,     "UNASSIGNED"
+2, 3, "",              Staff,     "UNASSIGNED"
+2, 4, "",              Staff,     "UNASSIGNED"
+2, 5, "",              Staff,     "UNASSIGNED"
+
+# Major 3 = Student Lab Badges (for testing during lab)
+3, 1, "",              Student,   "Lab Badge - Station 1"
+3, 2, "",              Student,   "Lab Badge - Station 2"
+3, 3, "",              Student,   "Lab Badge - Station 3"
+3, 4, "",              Student,   "Lab Badge - Station 4"
+3, 5, "",              Student,   "Lab Badge - Station 5"
+3, 6, "",              Student,   "Lab Badge - Station 6"
+3, 7, "",              Student,   "Lab Badge - Station 7"
+3, 8, "",              Student,   "Lab Badge - Station 8"
+3, 9, "",              Student,   "Lab Badge - Station 9"
+3, 10, "",             Student,   "Lab Badge - Station 10"
+3, 11, "",             Student,   "Lab Badge - Station 11"
+3, 12, "",             Student,   "Lab Badge - Station 12"
+3, 13, "",             Student,   "Lab Badge - Station 13"
+3, 14, "",             Student,   "Lab Badge - Station 14"
+3, 15, "",             Student,   "Lab Badge - Station 15"
