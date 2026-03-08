@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import json
+import os
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -10,7 +12,7 @@ from typing import Any
 
 import paho.mqtt.client as mqtt
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 
@@ -18,8 +20,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 BADGE_ASSIGNMENTS = REPO_ROOT / "badge_assignments.csv"
 DASHBOARD_DIR = REPO_ROOT / "dashboard"
 
-MQTT_BROKER = "localhost"
-MQTT_PORT = 1883
+MQTT_BROKER = os.environ.get("MQTT_BROKER", "localhost")
+MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 
 DEFAULT_ROOMS = [
     {"room_id": "CI-214", "room_name": "CI 214 - Firewall & IDS Lab"},
@@ -81,6 +83,7 @@ def load_badge_assignments() -> dict[tuple[int, int], dict[str, str]]:
 
 badge_registry = load_badge_assignments()
 state_lock = threading.Lock()
+state_changed = threading.Event()
 scanner_status: dict[str, dict[str, Any]] = {}
 rooms: dict[str, dict[str, Any]] = {
     room["room_id"]: {
@@ -152,6 +155,7 @@ def remove_from_other_rooms(faculty_id: str, keep_room_id: str) -> None:
 def handle_presence_event(payload: dict[str, Any]) -> None:
     payload = enrich_presence(payload)
     room_id = payload["room_id"]
+    print(f"[PRESENCE] room={room_id} major={payload.get('major')} minor={payload.get('minor')} present={payload.get('present')} display_name={payload.get('display_name', '?')}")
     room_name = payload.get("room_name", room_id)
     room = ensure_room(room_id, room_name)
     room["scanner"]["last_seen"] = iso_now()
@@ -187,12 +191,14 @@ def handle_message(topic: str, payload: dict[str, Any]) -> None:
             handle_system_event(payload)
         elif topic.startswith("faculty/presence/"):
             handle_presence_event(payload)
+        state_changed.set()
 
 
 def mqtt_on_connect(client: mqtt.Client, userdata: Any, flags: dict[str, Any], rc: int) -> None:
     if rc == 0:
         client.subscribe("faculty/system/+")
         client.subscribe("faculty/presence/+")
+        print(f"MQTT connected to {MQTT_BROKER}:{MQTT_PORT}, subscribed to faculty/system/+ and faculty/presence/+")
     else:
         print(f"MQTT connect failed rc={rc}")
 
@@ -213,6 +219,7 @@ mqtt_client.on_message = mqtt_on_message
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print(f"Connecting to MQTT broker {MQTT_BROKER}:{MQTT_PORT}...")
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT)
     mqtt_client.loop_start()
     try:
@@ -231,8 +238,7 @@ def index() -> FileResponse:
     return FileResponse(DASHBOARD_DIR / "index.html")
 
 
-@app.get("/api/state")
-def api_state() -> dict[str, Any]:
+def _get_state_snapshot() -> dict[str, Any]:
     with state_lock:
         rooms_snapshot = []
         for room in rooms.values():
@@ -246,17 +252,49 @@ def api_state() -> dict[str, Any]:
                     "present_faculty": present,
                 }
             )
-
         rooms_snapshot.sort(key=lambda item: item["room_name"])
-
         faculty_snapshot = list(faculty_locations.values())
         faculty_snapshot.sort(key=lambda item: item["display_name"])
-
         return {
             "generated_at": iso_now(),
             "rooms": rooms_snapshot,
             "faculty": faculty_snapshot,
         }
+
+
+@app.get("/api/state")
+def api_state() -> dict[str, Any]:
+    return _get_state_snapshot()
+
+
+async def event_stream():
+    """Stream state updates via Server-Sent Events when presence changes."""
+    # Send initial state immediately
+    yield f"data: {json.dumps(_get_state_snapshot())}\n\n"
+
+    while True:
+        state_changed.clear()
+
+        def wait_for_change():
+            state_changed.wait(timeout=5)
+
+        await asyncio.get_event_loop().run_in_executor(None, wait_for_change)
+        state = _get_state_snapshot()
+        yield f"data: {json.dumps(state)}\n\n"
+
+
+@app.get("/api/events")
+async def api_events():
+    """Server-Sent Events stream for real-time state updates."""
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/health")

@@ -33,7 +33,15 @@ uvicorn backend.server:app --reload --host 0.0.0.0 --port 8000
 
 ## MQTT
 
-An MQTT broker is expected on `localhost:1883`.
+The backend connects to an MQTT broker. By default it uses `localhost:1883`.
+
+If the broker runs on another host (e.g. a VM at `10.20.0.78`), set:
+
+```bash
+MQTT_BROKER=10.20.0.78 uvicorn backend.server:app --host 0.0.0.0 --port 8000
+```
+
+The backend must connect to the same broker the scanner publishes to. If the scanner uses `MQTT_BROKER = "10.20.0.78"` in its firmware, the backend needs `MQTT_BROKER=10.20.0.78` when run on your Mac.
 
 Topics:
 

@@ -2,7 +2,7 @@
  * Faculty BLE Badge — DIY iBeacon Broadcaster
  * =============================================
  * 
- * Hardware: ESP32-C3 Super Mini (~$3-4 on AliExpress/Amazon)
+ * Hardware: ESP32-C6 Mini (~$3-5 on AliExpress/Amazon)
  * Battery:  3.7V LiPo (300-600mAh) via TP4056 charger module
  * 
  * What it does:
@@ -34,6 +34,8 @@
 // Organization UUID — same across ALL badges in your deployment
 // Generate your own at https://www.uuidgenerator.net/
 #define BEACON_UUID "FDA50693-A4E2-4FB1-AFCF-C6EB07647825"
+// The ESP32 BLE iBeacon helper expects the UUID bytes in reverse order.
+#define BEACON_UUID_REV "25786407-EBC6-CFAF-B14F-E2A49306A5FD"
 
 // Major: group identifier (1 = faculty, 2 = staff, 3 = student worker, etc.)
 #define BEACON_MAJOR 1
@@ -64,7 +66,6 @@
 // ESP_PWR_LVL_P6  = +6dBm  (long range, worst battery)
 // ESP_PWR_LVL_P9  = +9dBm  (maximum range)
 #define TX_POWER ESP_PWR_LVL_N0
-
 // ---- LED FEEDBACK ----
 // Many ESP32 dev boards either use a different LED pin or have no usable built-in LED.
 #define LED_PIN 8
@@ -86,7 +87,7 @@ void setBeacon() {
   oBeacon.setManufacturerId(0x4C00);  // Note: byte-swapped for little-endian
   
   // Set the proximity UUID — identifies our organization/deployment
-  oBeacon.setProximityUUID(BLEUUID(BEACON_UUID));
+  oBeacon.setProximityUUID(BLEUUID(BEACON_UUID_REV));
   
   // Major and Minor — identify the group and individual
   oBeacon.setMajor(BEACON_MAJOR);
@@ -104,8 +105,9 @@ void setBeacon() {
   oAdvertisementData.setManufacturerData(oBeacon.getData());
   
   pAdvertising->setAdvertisementData(oAdvertisementData);
-  
-  // Also set scan response data with a friendly name (optional)
+
+  // Expose a simple name as a fallback identifier for scanners that do not
+  // parse the iBeacon payload correctly on every board family.
   BLEAdvertisementData oScanResponseData = BLEAdvertisementData();
   char deviceName[32];
   snprintf(deviceName, sizeof(deviceName), "BADGE-%d-%d", BEACON_MAJOR, BEACON_MINOR);
@@ -125,7 +127,6 @@ void setup() {
     digitalWrite(LED_PIN, LOW);  // LED on (active low on C3 Super Mini)
   }
 
-  // Initialize BLE
   char deviceName[32];
   snprintf(deviceName, sizeof(deviceName), "BADGE-%d-%d", BEACON_MAJOR, BEACON_MINOR);
   BLEDevice::init(deviceName);

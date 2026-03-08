@@ -135,6 +135,27 @@
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 10px 12px;
+      animation: chip-appear 0.4s ease-out;
+    }
+
+    @keyframes chip-appear {
+      from {
+        opacity: 0;
+        transform: scale(0.9) translateY(-4px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    .room-card.updated {
+      animation: room-pulse 0.6s ease-out;
+    }
+
+    @keyframes room-pulse {
+      0%, 100% { border-color: var(--border); }
+      50% { border-color: var(--accent); }
     }
 
     .faculty-chip strong {
@@ -167,6 +188,31 @@
       margin: 0;
     }
 
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: rgba(77, 212, 160, 0.2);
+      color: var(--ok);
+    }
+
+    .live-badge::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ok);
+      animation: live-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes live-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
     @media (max-width: 900px) {
       .grid {
         grid-template-columns: 1fr;
@@ -181,7 +227,10 @@
         <h1>Faculty Presence Dashboard</h1>
         <p>Live room presence driven by BLE badge sightings and MQTT events.</p>
       </div>
-      <div class="timestamp" id="generated-at">Waiting for data...</div>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <span class="live-badge" id="live-badge">Live</span>
+        <span class="timestamp" id="generated-at">Connecting...</span>
+      </div>
     </section>
 
     <section class="grid">
@@ -217,15 +266,25 @@
       return "status";
     }
 
-    function renderRooms(rooms) {
+    function facultyKey(room) {
+      return (room.present_faculty || []).map(p => p.faculty_id).sort().join(",");
+    }
+
+    function renderRooms(rooms, prevRoomFaculty) {
       const container = document.getElementById("rooms");
       if (!rooms.length) {
         container.innerHTML = '<p class="empty">No room data yet. Start the simulator or scanner.</p>';
         return;
       }
 
+      const hasRenderedBefore = prevRoomFaculty && Object.keys(prevRoomFaculty).length > 0;
+
       container.innerHTML = rooms.map(room => {
         const faculty = room.present_faculty || [];
+        const prevKey = prevRoomFaculty && prevRoomFaculty[room.room_id];
+        const currKey = facultyKey(room);
+        const justUpdated = hasRenderedBefore && prevKey !== undefined && prevKey !== currKey;
+
         const facultyHtml = faculty.length
           ? `<div class="faculty-list">${faculty.map(person => `
               <div class="faculty-chip">
@@ -236,7 +295,7 @@
           : '<p class="empty">No faculty currently marked present.</p>';
 
         return `
-          <article class="room-card">
+          <article class="room-card${justUpdated ? " updated" : ""}" data-room-id="${room.room_id}">
             <div class="room-header">
               <div>
                 <h3>${room.room_name}</h3>
@@ -273,16 +332,42 @@
       `).join("");
     }
 
-    async function refresh() {
-      const response = await fetch("/api/state");
-      const data = await response.json();
+    function applyState(data) {
+      const prevRoomFaculty = window._prevRoomFaculty || {};
+      window._prevRoomFaculty = Object.fromEntries(
+        (data.rooms || []).map(r => [r.room_id, facultyKey(r)])
+      );
+
       document.getElementById("generated-at").textContent = `Updated ${formatTimestamp(data.generated_at)}`;
-      renderRooms(data.rooms || []);
+      renderRooms(data.rooms || [], prevRoomFaculty);
       renderFaculty(data.faculty || []);
     }
 
-    refresh();
-    setInterval(refresh, 2000);
+    function connectSSE() {
+      const es = new EventSource("/api/events");
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          applyState(data);
+          document.getElementById("live-badge").textContent = "Live";
+        } catch (err) {
+          console.warn("SSE parse error:", err);
+        }
+      };
+      es.onerror = () => {
+        document.getElementById("live-badge").textContent = "Reconnecting…";
+        es.close();
+        setTimeout(connectSSE, 2000);
+      };
+    }
+
+    // Fallback: fetch once, then try SSE
+    fetch("/api/state")
+      .then(r => r.json())
+      .then(applyState)
+      .catch(() => { document.getElementById("generated-at").textContent = "Failed to load"; });
+
+    connectSSE();
   </script>
 </body>
 </html>

@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 // Network configuration
 // ---------------------------------------------------------------------------
-const char *WIFI_SSID = "YOUR_WIFI_SSID";
+const char *WIFI_SSID = "YOUR_WIFI";
 const char *WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 const char *MQTT_BROKER = "YOUR_MQTT_BROKER_IP";
 const uint16_t MQTT_PORT = 1883;
@@ -29,10 +29,11 @@ const char *ROOM_NAME = "CI 214 - Faculty Demo Room";
 // ---------------------------------------------------------------------------
 const char *ORG_UUID = "FDA50693-A4E2-4FB1-AFCF-C6EB07647825";
 const int SCAN_TIME_SECONDS = 2;
-const int RSSI_THRESHOLD = -78;
+const int RSSI_THRESHOLD = -100;
 const unsigned long ABSENCE_TIMEOUT_MS = 15000;
 const unsigned long STATUS_INTERVAL_MS = 30000;
 const size_t MAX_TRACKED_BADGES = 32;
+const bool DEBUG_BADGE_MATCHING = true;
 
 struct BadgeState {
   bool inUse;
@@ -94,6 +95,28 @@ int allocateBadgeSlot(uint16_t major, uint16_t minor) {
 
 bool uuidMatches(const String &uuid) {
   return uuid.equalsIgnoreCase(ORG_UUID);
+}
+
+bool parseBadgeName(const String &name, uint16_t &major, uint16_t &minor) {
+  if (!name.startsWith("BADGE-")) {
+    return false;
+  }
+
+  int firstDash = name.indexOf('-', 6);
+  if (firstDash < 0) {
+    return false;
+  }
+
+  String majorPart = name.substring(6, firstDash);
+  String minorPart = name.substring(firstDash + 1);
+
+  if (majorPart.length() == 0 || minorPart.length() == 0) {
+    return false;
+  }
+
+  major = (uint16_t)majorPart.toInt();
+  minor = (uint16_t)minorPart.toInt();
+  return major > 0 || minor > 0;
 }
 
 void connectWiFi() {
@@ -158,16 +181,17 @@ void publishPresenceEvent(uint16_t major, uint16_t minor, bool present, int rssi
   payload += "\"timestamp\":" + String(millis() / 1000);
   payload += "}";
 
-  mqttClient.publish(topic.c_str(), payload.c_str(), true);
+  bool publishOk = mqttClient.publish(topic.c_str(), payload.c_str(), true);
   Serial.printf(
-    "[%s] badge_%d_%d in %s (major=%d minor=%d rssi=%d)\n",
+    "[%s] badge_%d_%d in %s (major=%d minor=%d rssi=%d publish=%s)\n",
     present ? "ENTER" : "EXIT",
     major,
     minor,
     ROOM_ID,
     major,
     minor,
-    rssi
+    rssi,
+    publishOk ? "ok" : "failed"
   );
 }
 
@@ -209,17 +233,67 @@ void expireAbsentBadges() {
 
 class BadgeCallbacks : public BLEAdvertisedDeviceCallbacks {
   void onResult(BLEAdvertisedDevice advertisedDevice) override {
+    if (advertisedDevice.haveName()) {
+      String name = advertisedDevice.getName().c_str();
+      uint16_t major = 0;
+      uint16_t minor = 0;
+      int rssi = advertisedDevice.getRSSI();
+
+      if (DEBUG_BADGE_MATCHING) {
+        Serial.printf("Named device seen: name=%s rssi=%d\n", name.c_str(), rssi);
+      }
+
+      if (parseBadgeName(name, major, minor)) {
+        if (DEBUG_BADGE_MATCHING) {
+          Serial.printf(
+            "Name-based badge match: name=%s major=%d minor=%d rssi=%d\n",
+            name.c_str(),
+            major,
+            minor,
+            rssi
+          );
+        }
+
+        handleBadgeSeen(major, minor, rssi);
+        return;
+      }
+    }
+
     if (!advertisedDevice.haveManufacturerData()) {
       return;
     }
 
     String manufacturerData = advertisedDevice.getManufacturerData();
+    int rssi = advertisedDevice.getRSSI();
+
+    if (DEBUG_BADGE_MATCHING) {
+      Serial.printf(
+        "Manufacturer data seen: len=%d rssi=%d\n",
+        manufacturerData.length(),
+        rssi
+      );
+    }
+
     if (manufacturerData.length() != 25) {
+      if (DEBUG_BADGE_MATCHING) {
+        Serial.println("  -> rejected: wrong manufacturer data length");
+      }
       return;
     }
 
     const uint8_t *raw = (const uint8_t *)manufacturerData.c_str();
+    if (DEBUG_BADGE_MATCHING) {
+      Serial.print("  -> first bytes: ");
+      for (int i = 0; i < 6 && i < manufacturerData.length(); i++) {
+        Serial.printf("%02X ", raw[i]);
+      }
+      Serial.println();
+    }
+
     if (raw[0] != 0x4C || raw[1] != 0x00) {
+      if (DEBUG_BADGE_MATCHING) {
+        Serial.println("  -> rejected: not Apple manufacturer data");
+      }
       return;
     }
 
@@ -227,13 +301,25 @@ class BadgeCallbacks : public BLEAdvertisedDeviceCallbacks {
     beacon.setData(manufacturerData);
 
     String uuid = beacon.getProximityUUID().toString().c_str();
-    if (!uuidMatches(uuid)) {
-      return;
-    }
-
     uint16_t major = ENDIAN_CHANGE_U16(beacon.getMajor());
     uint16_t minor = ENDIAN_CHANGE_U16(beacon.getMinor());
-    int rssi = advertisedDevice.getRSSI();
+
+    if (DEBUG_BADGE_MATCHING) {
+      Serial.printf(
+        "  -> parsed UUID=%s major=%d minor=%d rssi=%d\n",
+        uuid.c_str(),
+        major,
+        minor,
+        rssi
+      );
+    }
+
+    if (!uuidMatches(uuid)) {
+      if (DEBUG_BADGE_MATCHING) {
+        Serial.println("  -> rejected: UUID mismatch");
+      }
+      return;
+    }
 
     handleBadgeSeen(major, minor, rssi);
   }
