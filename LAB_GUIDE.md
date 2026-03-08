@@ -250,7 +250,7 @@ flowchart LR
     end
 
     badge -- "BLE broadcast (iBeacon)" --> scanner
-    scanner -- 'WiFi / MQTT: "dr_smith: IN"' --> broker
+    scanner -- "WiFi / MQTT presence event" --> broker
     broker --> dashboard
 ```
 
