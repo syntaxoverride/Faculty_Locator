@@ -1,5 +1,12 @@
 # Faculty Locator
 
+[![ESP32](https://img.shields.io/badge/ESP32-Platform-E7352C?logo=espressif)](https://www.espressif.com/)
+[![Arduino](https://img.shields.io/badge/Arduino-C++-00979D?logo=arduino)](https://www.arduino.cc/)
+[![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![MQTT](https://img.shields.io/badge/MQTT-Broker-660066?logo=eclipse-mosquitto&logoColor=white)](https://mqtt.org/)
+[![BLE](https://img.shields.io/badge/BLE-iBeacon-0082FC?logo=bluetooth)](https://www.bluetooth.com/)
+
 Faculty Locator is a classroom-scale prototype for tracking when instructors are present in a room.
 
 BLE badges broadcast a simple iBeacon-style identifier, room scanners detect those broadcasts, and a lightweight backend publishes the resulting presence data to a web dashboard. The project is designed as a teaching-friendly mock-up that demonstrates the architecture behind room presence systems without the cost or complexity of a full enterprise deployment.
